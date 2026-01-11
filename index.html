@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lunaria 🌙</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#caa9ff">
+
+<style>
+:root{
+  --bg:#0b0b12;
+  --card:#18182a;
+  --pink:#ff79c6;
+  --lilac:#caa9ff;
+  --soft:#6b5ca5;
+  --text:#f5f5fa;
+}
+body{
+  margin:0;
+  font-family:system-ui,sans-serif;
+  background:radial-gradient(circle at top,#1a1a33,var(--bg));
+  color:var(--text);
+  padding:20px;
+}
+h1{text-align:center;color:var(--lilac);}
+.subtitle{text-align:center;color:var(--pink);margin-bottom:20px;}
+
+.card{
+  background:var(--card);
+  border-radius:20px;
+  padding:20px;
+  max-width:360px;
+  margin:16px auto;
+}
+
+.month{
+  display:flex;
+  justify-content:space-between;
+  font-weight:bold;
+  margin-bottom:12px;
+}
+
+.calendar{
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  gap:8px;
+}
+
+.day{
+  height:42px;
+  border-radius:12px;
+  border:none;
+  background:#222;
+  color:var(--text);
+}
+
+.day.period{background:var(--pink);color:#000;}
+.day.ovulation{background:var(--lilac);color:#000;}
+.day.possible{background:var(--soft);}
+.day.logged{outline:2px solid var(--lilac);}
+
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.7);
+  display:none;
+  align-items:center;
+  justify-content:center;
+}
+
+.modal-content{
+  background:var(--card);
+  padding:20px;
+  border-radius:18px;
+  width:90%;
+  max-width:320px;
+}
+
+.moods button{
+  font-size:22px;
+  background:none;
+  border:none;
+  margin:4px;
+  opacity:.4;
+}
+.moods button.active{opacity:1;transform:scale(1.2);}
+
+.save-btn{
+  margin-top:12px;
+  width:100%;
+  padding:12px;
+  border-radius:14px;
+  border:none;
+  font-weight:bold;
+  background:linear-gradient(135deg,var(--pink),var(--lilac));
+}
+
+.affirmation{
+  margin-top:10px;
+  padding:10px;
+  border-radius:12px;
+  background:#222;
+  font-size:14px;
+}
+.export-btn{
+  text-align:center;
+  margin-top:10px;
+  color:var(--lilac);
+}
+</style>
+</head>
+
+<body>
+
+<h1>Lunaria</h1>
+<div class="subtitle">Embrace your renewal 🌸</div>
+
+<div class="card">
+  <div class="month">
+    <span onclick="changeMonth(-1)">‹</span>
+    <span id="monthLabel"></span>
+    <span onclick="changeMonth(1)">›</span>
+  </div>
+  <div class="calendar" id="calendar"></div>
+</div>
+
+<div class="card">
+  <div class="export-btn" onclick="exportPDF()">⬇ Export Logs as PDF</div>
+</div>
+
+<div class="modal" id="logModal">
+  <div class="modal-content">
+    <h3 id="logTitle"></h3>
+
+    <div class="affirmation" id="affirmation"></div>
+
+    <p>Mood</p>
+    <div class="moods">
+      <button class="mood-btn">😊</button>
+      <button class="mood-btn">😐</button>
+      <button class="mood-btn">😔</button>
+      <button class="mood-btn">😡</button>
+      <button class="mood-btn">😭</button>
+    </div>
+
+    <p>Symptoms</p>
+    <label><input type="checkbox" value="Cramps"> Cramps</label>
+    <label><input type="checkbox" value="Headache"> Headache</label>
+    <label><input type="checkbox" value="Bloating"> Bloating</label>
+    <label><input type="checkbox" value="Fatigue"> Fatigue</label>
+
+    <button class="save-btn" onclick="saveLog()">Save</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+const STORAGE="lunaria_logs";
+let viewDate=new Date();
+let selectedDate=null;
+const cycleLength=28;
+const periodLength=5;
+
+const affirmations={
+  period:"Rest is productive. Your body is restoring itself.",
+  follicular:"Fresh energy is rising. Start gently.",
+  ovulation:"You are magnetic and expressive today.",
+  luteal:"Slow down. Reflection brings clarity."
+};
+
+function getLogs(){return JSON.parse(localStorage.getItem(STORAGE))||{};}
+function saveLogs(d){localStorage.setItem(STORAGE,JSON.stringify(d));}
+
+function changeMonth(n){
+  viewDate.setMonth(viewDate.getMonth()+n);
+  buildCalendar();
+}
+
+function buildCalendar(){
+  const cal=document.getElementById("calendar");
+  cal.innerHTML="";
+  const y=viewDate.getFullYear();
+  const m=viewDate.getMonth();
+  document.getElementById("monthLabel").innerText=
+    viewDate.toLocaleString("default",{month:"long",year:"numeric"});
+
+  const days=new Date(y,m+1,0).getDate();
+  const logs=getLogs();
+  const dates=Object.keys(logs).sort();
+  let predicted=null;
+
+  if(dates.length){
+    predicted=new Date(dates[dates.length-1]);
+    predicted.setDate(predicted.getDate()+cycleLength);
+  }
+
+  for(let i=1;i<=days;i++){
+    const d=`${y}-${String(m+1).padStart(2,"0")}-${String(i).padStart(2,"0")}`;
+    const btn=document.createElement("button");
+    btn.className="day";
+    btn.innerText=i;
+    btn.dataset.date=d;
+
+    if(predicted){
+      const diff=(new Date(d)-predicted)/(1000*60*60*24);
+      if(diff>=0 && diff<periodLength) btn.classList.add("period");
+      if(diff>=-2 && diff<=2) btn.classList.add("possible");
+      if(diff===-14) btn.classList.add("ovulation");
+    }
+
+    if(logs[d]) btn.classList.add("logged");
+    btn.onclick=()=>openModal(d);
+    cal.appendChild(btn);
+  }
+}
+
+function getPhase(date){
+  const logs=getLogs();
+  const dates=Object.keys(logs).sort();
+  if(!dates.length) return "follicular";
+
+  let last=new Date(dates[dates.length-1]);
+  const diff=(new Date(date)-last)/(1000*60*60*24);
+
+  if(diff>=0 && diff<periodLength) return "period";
+  if(diff<14) return "follicular";
+  if(diff===14) return "ovulation";
+  return "luteal";
+}
+
+function openModal(date){
+  selectedDate=date;
+  document.getElementById("logModal").style.display="flex";
+  document.getElementById("logTitle").innerText=date;
+
+  const phase=getPhase(date);
+  document.getElementById("affirmation").innerText=affirmations[phase];
+
+  document.querySelectorAll(".mood-btn").forEach(b=>b.classList.remove("active"));
+  document.querySelectorAll("input[type=checkbox]").forEach(c=>c.checked=false);
+
+  const log=getLogs()[date];
+  if(log){
+    document.querySelectorAll(".mood-btn").forEach(b=>{
+      if(b.innerText===log.mood) b.classList.add("active");
+    });
+    log.symptoms.forEach(s=>{
+      document.querySelector(`input[value="${s}"]`).checked=true;
+    });
+  }
+}
+
+function saveLog(){
+  const mood=document.querySelector(".mood-btn.active")?.innerText;
+  const symptoms=[...document.querySelectorAll("input:checked")].map(c=>c.value);
+  const logs=getLogs();
+  logs[selectedDate]={mood,symptoms};
+  saveLogs(logs);
+  document.getElementById("logModal").style.display="none";
+  buildCalendar();
+}
+
+function exportPDF(){
+  const { jsPDF } = window.jspdf;
+  const pdf=new jsPDF();
+  let y=10;
+  pdf.text("Lunaria Logs",10,y); y+=10;
+
+  const logs=getLogs();
+  Object.keys(logs).sort().forEach(d=>{
+    pdf.text(`${d}: ${logs[d].mood||""} - ${logs[d].symptoms.join(", ")}`,10,y);
+    y+=8;
+  });
+
+  pdf.save("lunaria-logs.pdf");
+}
+
+buildCalendar();
+
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+
+</body>
+</html>
